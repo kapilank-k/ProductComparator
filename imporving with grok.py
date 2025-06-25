@@ -1,90 +1,49 @@
-# Product Comparator Script with GROQ LLM Fallback
-# Compares product descriptions field-by-field using rule-based extraction, fuzzy matching, semantic similarity, and Groq-hosted LLM fallback (Mixtral)
+# Product Comparator with FAISS, spaCy NER, and LLM fallback
 
 import re
+import os
 import requests
+import numpy as np
+from dotenv import load_dotenv
 from rapidfuzz import fuzz
 from prettytable import PrettyTable
 from sentence_transformers import SentenceTransformer, util
-from dotenv import load_dotenv
-import os
+import faiss
+import spacy
 
+# === Load spaCy NER model ===
+ner_model = spacy.load("ner_model")
+
+def extract_using_ner(text, field):
+    doc = ner_model(text)
+    for ent in doc.ents:
+        if ent.label_ == field:
+            return ent.text
+    return None
+
+# === Load API Key ===
 load_dotenv()
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
-# === Step 1: Preprocessing ===
+# === Embedding Model ===
+model = SentenceTransformer("BAAI/bge-small-en-v1.5")
+
+# === FAISS Indexes for Grades and Standards ===
+known_grades = ["Fe 500D", "Fe 550", "Fe 415", "Type I", "Type V", "Class I", "Class II"]
+grade_embeddings = model.encode(["query: " + g for g in known_grades])
+grade_index = faiss.IndexFlatL2(grade_embeddings.shape[1])
+grade_index.add(np.array(grade_embeddings))
+
+known_standards = ["IS 1786", "IS 456", "IS 10262", "IS 4031", "ASTM A706", "ASTM A615"]
+standard_embeddings = model.encode(["query: " + s for s in known_standards])
+standard_index = faiss.IndexFlatL2(standard_embeddings.shape[1])
+standard_index.add(np.array(standard_embeddings))
+
+# === Preprocessing ===
 def preprocess(text):
-    text = text.lower().strip()
-    text = text.replace("_", " ")
-    text = text.replace(":-", ":")
-    text = text.replace(";", "; ")
-    return text
+    return text.lower().strip().replace("_", " ").replace(":-", ":").replace(";", "; ")
 
-# === Step 2: Field Extractors ===
-def extract_grade(text):
-    match = re.search(r"(fe[\s_]?500[d]?|\b43\b|\b53\b|type\s?[vViI]+|high[-\s]?strength)", text)
-    return match.group(1).upper().replace(" ", "") if match else None
-
-def extract_diameter(text):
-    match = re.search(r"(\d{1,3}\.?\d*)\s?mm", text)
-    return f"{float(match.group(1)):.2f} mm" if match else None
-
-# Use LLM for Material Extraction
-def extract_material(text):
-    prompt = f"""
-Extract the material type from this product description:
-
-{text}
-
-Return only the material type like OPC, TMT, PC Strand, Cement, etc. If unknown, return 'Unknown'.
-"""
-    try:
-        response = requests.post(
-            "https://api.groq.com/openai/v1/chat/completions",
-            headers={"Authorization": f"Bearer {GROQ_API_KEY}"},
-            json={
-                "model": "llama3-70b-8192",
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": 0
-            }
-        )
-        return response.json()["choices"][0]["message"]["content"].strip()
-    except:
-        return None
-
-def extract_form(text):
-    prompt = f"""
-Identify the product form from this description:
-
-{text}
-
-Return values like: Loose, Straight Bars, Bag, Powder, Microfine, etc. Return 'Unknown' if not found.
-"""
-    try:
-        response = requests.post(
-            "https://api.groq.com/openai/v1/chat/completions",
-            headers={"Authorization": f"Bearer {GROQ_API_KEY}"},
-            json={
-                "model": "llama3-70b-8192",
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": 0
-            }
-        )
-        return response.json()["choices"][0]["message"]["content"].strip()
-    except:
-        return None
-
-def extract_length(text):
-    match = re.search(r"(\d{4,5}\.?\d*)\s?mm", text)
-    return f"{float(match.group(1)):.2f} mm" if match else None
-
-def extract_standard(text):
-    match = re.search(r"(is\s?\d{4}|astm\s?[a-z]?\d{3,4})", text)
-    return match.group(0).upper() if match else None
-
-# === Step 3: Semantic Model Setup ===
-model = SentenceTransformer('paraphrase-MiniLM-L6-v2')
-
+# === Matching Functions ===
 def semantic_match(val1, val2):
     if not val1 or not val2:
         return False
@@ -93,50 +52,28 @@ def semantic_match(val1, val2):
     similarity = util.cos_sim(emb1, emb2)
     return similarity.item() > 0.85
 
-# === Step 4: Field Comparator ===
-def compare_field(val1, val2):
-    if not val1 and not val2:
-        return ("⚪ Not Mentioned", val1, val2)
-    elif val1 == val2:
-        return ("✅ Exact Match", val1, val2)
-    elif val1 and val2 and fuzz.ratio(val1, val2) > 85:
-        return ("✅ Fuzzy Match", val1, val2)
-    elif semantic_match(val1, val2):
-        return ("✅ Semantic Match", val1, val2)
-    else:
-        return ("❌ Mismatch", val1, val2)
+def match_grade_faiss(text):
+    if not text: return None
+    input_embedding = model.encode(["query: " + text])
+    D, I = grade_index.search(np.array(input_embedding), k=1)
+    return known_grades[I[0][0]] if D[0][0] < 1.0 else None
 
-# === Step 5: Report Formatter ===
-def print_report(string1, string2, results):
-    print("\nString 1:")
-    print(string1)
-    print("\nString 2:")
-    print(string2)
-    print("\n🔍 Comparison Report:\n")
+def match_standard_faiss(text):
+    if not text: return None
+    input_embedding = model.encode(["query: " + text])
+    D, I = standard_index.search(np.array(input_embedding), k=1)
+    return known_standards[I[0][0]] if D[0][0] < 1.0 else None
 
-    table = PrettyTable()
-    table.field_names = ["Aspect", "String 1", "String 2", "Match Status"]
-
-    for row in results:
-        table.add_row(row)
-
-    print(table)
-
-# === Step 6: GROQ LLM Fallback ===
-def call_llm_groq(string1, string2):
+# === LLM Fallback ===
+def llm_extract_single_field(text, field):
     prompt = f"""
-Compare the following two product descriptions and extract these fields:
-- Grade
-- Diameter
-- Material
-- Form
-- Length
-- Standard
+From the following product description, extract only the value of the field: "{field}".
 
-Return a JSON object for each string with field-value pairs.
+Description:
+{text}
 
-String 1: {string1}
-String 2: {string2}
+Respond with a clean field value like "TMT", "Fe 500D", "IS 1786", or "Loose".
+If not found, return exactly: Unknown. Do not add explanation or context.
 """
     try:
         response = requests.post(
@@ -145,34 +82,65 @@ String 2: {string2}
             json={
                 "model": "llama3-70b-8192",
                 "messages": [{"role": "user", "content": prompt}],
-                "temperature": 0.2
+                "temperature": 0
             }
         )
+        return response.json()["choices"][0]["message"]["content"].strip()
+    except:
+        return None
 
-        data = response.json()
-        if "choices" not in data:
-            print("❌ LLM Response Error:", data)
-            return "LLM call failed: Unexpected response structure"
+# === Field Extractors ===
+def extract_grade(text):
+    return extract_using_ner(text, "Grade") or match_grade_faiss(text)
 
-        return data["choices"][0]["message"]["content"]
+def extract_diameter(text):
+    match = re.search(r"(\d{1,3}\.?\d*)\s?mm", text)
+    return f"{float(match.group(1)):.2f} mm" if match else None
 
-    except Exception as e:
-        return f"LLM call failed: {str(e)}"
+def extract_length(text):
+    match = re.search(r"(\d{4,5}\.?\d*)\s?mm", text)
+    return f"{float(match.group(1)):.2f} mm" if match else None
 
-# === Step 7: Check if Fields Are Missing ===
-def fields_missing(results):
-    for aspect, val1, val2, _ in results:
-        if val1 == "-" or val2 == "-":
-            return True
-    return False
+def extract_standard(text):
+    return extract_using_ner(text, "Standard") or match_standard_faiss(text)
 
-# === Step 8: Core Comparison ===
+def extract_material(text):
+    result = extract_using_ner(text, "Material") or llm_extract_single_field(text, "Material")
+    return None if result.lower() == "unknown" else result
+
+def extract_form(text):
+    result = extract_using_ner(text, "Form") or llm_extract_single_field(text, "Form")
+    return None if result.lower() == "unknown" else result
+
+# === Field Comparison ===
+def compare_field(val1, val2):
+    if not val1 and not val2:
+        return ("⚪ Not Mentioned", "-", "-")
+    elif val1 == val2:
+        return ("✅ Exact Match", val1, val2)
+    elif fuzz.ratio(val1, val2) > 85:
+        return ("✅ Fuzzy Match", val1, val2)
+    elif semantic_match(val1, val2):
+        return ("✅ Semantic Match", val1, val2)
+    else:
+        return ("❌ Mismatch", val1 or "-", val2 or "-")
+
+# === Pretty Report ===
+def print_report(string1, string2, results):
+    print("\nString 1:\n", string1)
+    print("\nString 2:\n", string2)
+    print("\n🔍 Comparison Report:\n")
+    table = PrettyTable()
+    table.field_names = ["Aspect", "String 1", "String 2", "Match Status"]
+    for aspect, val1, val2, status in results:
+        table.add_row([aspect, val1, val2, status])
+    print(table)
+
+# === Comparison Runner ===
 def compare_strings(string1, string2):
     s1 = preprocess(string1)
     s2 = preprocess(string2)
-
     results = []
-
     aspects = [
         ("Grade", extract_grade),
         ("Diameter", extract_diameter),
@@ -181,25 +149,16 @@ def compare_strings(string1, string2):
         ("Length", extract_length),
         ("Standard", extract_standard),
     ]
-
     for aspect, func in aspects:
         val1 = func(s1)
         val2 = func(s2)
         status, v1, v2 = compare_field(val1, val2)
-        results.append((aspect, v1 or "-", v2 or "-", status))
-
+        results.append((aspect, v1, v2, status))
     print_report(string1, string2, results)
 
-    if fields_missing(results):
-        print("\n Falling back to Groq LLM for smart extraction...\n")
-        llm_output = call_llm_groq(string1, string2)
-        print("\n LLM Fallback Output:")
-        print(llm_output)
-
-# === Step 9: CLI Input ===
+# === CLI Entry ===
 if __name__ == "__main__":
     print("\n🔧 Product Comparator - Enter two descriptions\n")
     s1 = input("Enter String 1:\n")
     s2 = input("Enter String 2:\n")
-
     compare_strings(s1, s2)

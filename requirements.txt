@@ -1,0 +1,14 @@
+spacy==3.7.2
+sentence-transformers==2.5.1
+faiss-cpu==1.7.4
+prettytable==3.10.0
+python-dotenv==1.0.1
+requests==2.31.0
+rapidfuzz==3.6.2
+scikit-learn==1.4.2
+
+
+After this, you (or anyone) can run:
+
+
+pip install -r requirements.txt

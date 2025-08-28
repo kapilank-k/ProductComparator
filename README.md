@@ -1,14 +1,14 @@
-# 🧠 Product Comparator with NER + FAISS + LLM Fallback
+# Product Comparator with NER + FAISS + LLM Fallback
 
 This project compares two unstructured product descriptions (like cement or steel bars) and extracts structured fields using:
-- ✅ spaCy-trained NER model
-- ✅ FAISS + SentenceTransformers for semantic similarity
-- ✅ Groq-hosted LLM (Mixtral) as fallback extractor
-- ✅ Pretty comparison table output
+- spaCy-trained NER model
+-  FAISS + SentenceTransformers for semantic similarity
+-  Groq-hosted LLM (Mixtral) as fallback extractor
+-  Pretty comparison table output
 
 ---
 
-## 🚀 Features
+##  Features
 
 - Extracts: `Grade`, `Form`, `Material`, `Standard`, `Length`, `Diameter`
 - Custom NER trained on 2000+ real and noisy samples
@@ -68,11 +68,11 @@ python comparator.py
 Evaluation report generator
 # Add this inside your evaluate_on_test.py at the end
 with open("evaluation_report.txt", "w") as f:
-    f.write("📊 Test Set Evaluation Report:\n")
-    f.write(f"✅ Correct Predictions: {correct}\n")
-    f.write(f"🔍 Total Predicted:      {len(pred_entities)}\n")
-    f.write(f"🎯 Total Actual Labels:  {len(true_entities)}\n\n")
-    f.write(f"📈 Precision: {precision:.2f}\n")
-    f.write(f"📉 Recall:    {recall:.2f}\n")
-    f.write(f"⭐ F1 Score:  {f1:.2f}\n")
+    f.write(" Test Set Evaluation Report:\n")
+    f.write(f" Correct Predictions: {correct}\n")
+    f.write(f" Total Predicted:      {len(pred_entities)}\n")
+    f.write(f" Total Actual Labels:  {len(true_entities)}\n\n")
+    f.write(f" Precision: {precision:.2f}\n")
+    f.write(f" Recall:    {recall:.2f}\n")
+    f.write(f" F1 Score:  {f1:.2f}\n")
 

@@ -1,0 +1,50 @@
+{
+  "Material": {
+    "tp": 176,
+    "fp": 324,
+    "fn": 136,
+    "precision": 0.352,
+    "recall": 0.5641025641025641,
+    "support": 312
+  },
+  "Standard": {
+    "tp": 251,
+    "fp": 6,
+    "fn": 60,
+    "precision": 0.9766536964980544,
+    "recall": 0.8070739549839229,
+    "support": 311
+  },
+  "Grade": {
+    "tp": 229,
+    "fp": 66,
+    "fn": 80,
+    "precision": 0.7762711864406779,
+    "recall": 0.7411003236245954,
+    "support": 309
+  },
+  "Diameter": {
+    "tp": 266,
+    "fp": 74,
+    "fn": 12,
+    "precision": 0.7823529411764706,
+    "recall": 0.9568345323741008,
+    "support": 278
+  },
+  "Form": {
+    "tp": 77,
+    "fp": 34,
+    "fn": 195,
+    "precision": 0.6936936936936937,
+    "recall": 0.28308823529411764,
+    "support": 272
+  },
+  "Length": {
+    "tp": 0,
+    "fp": 0,
+    "fn": 217,
+    "precision": 0,
+    "recall": 0.0,
+    "support": 217
+  }
+}
